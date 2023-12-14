@@ -1,84 +1,93 @@
 import flask
 
 class Calculator:
-    def calculate(self, expression):
-        # Удаляем пробелы из выражения
-        expression = expression.replace(" ", "")
-        
-        # Проверяем наличие скобок в выражении
-        if "(" in expression or ")" in expression:
-            # Рекурсивно вычисляем значение выражения внутри скобок
-            return self.calculate_with_brackets(expression)
-        
-        # Разделяем выражение на числа и операции
-        numbers = []
-        operators = []
-        number = ""
-        
+    def __init__(self):
+        self.operators = {'+': 1, '-': 1, '*': 2, '/': 2}
+        self.unary_operators = {'-'}
+        self.parentheses = {'(', ')'}
+
+    def tokenize(self, expression):
+        tokens = []
+        current_token = ''
+        open_parentheses_count = 0
+        error_message = ""
         for i, char in enumerate(expression):
-            if char.isdigit() or char == ".":
-                number += char
-            elif (char == "-" or char == "+") and (i == 0 or expression[i-1] in ["+", "-", "*", "/"]):
-                # Учитываем унарный минус
-                number += char
-            else:
-                if number:
-                    numbers.append(float(number))
-                    number = ""
-                
-                if char in ["+", "-", "*", "/"]:
-                    operators.append(char)
-        
-        if number:
-            numbers.append(float(number))
-        
-        # Вычисляем умножение и деление слева направо
-        i = 0
-        while i < len(operators):
-            if operators[i] == "*":
-                numbers[i] *= numbers[i+1]
-                del numbers[i+1]
-                del operators[i]
-            elif operators[i] == "/":
-                if numbers[i+1] != 0:
-                    numbers[i] /= numbers[i+1]
-                    del numbers[i+1]
-                    del operators[i]
+            if char.isdigit() or char == '.':
+                current_token += char
+            elif char in self.operators or char in self.parentheses:
+                if current_token:
+                    tokens.append(float(current_token))
+                    current_token = ''
+                if char in self.unary_operators and (i == 0 or expression[i-1] in self.operators or expression[i-1] in self.parentheses):
+                    current_token += char
                 else:
-                    return "Ошибка: деление на ноль"
-            else:
-                i += 1
-        
-        # Вычисляем сложение и вычитание слева направо
-        result = numbers[0]
-        
-        for i in range(len(operators)):
-            if operators[i] == "+":
-                result += numbers[i+1]
-            elif operators[i] == "-":
-                result -= numbers[i+1]
-        
-        return result
+                    tokens.append(char)
+                    if char == '(':
+                        open_parentheses_count += 1
+                    elif char == ')':
+                        open_parentheses_count -= 1
+            elif char != ' ':
+                error_message = "Incorrect input: invalid character"
+        if open_parentheses_count < 0:
+            error_message = "Invalid expression: mismatched parentheses"
+        if current_token:
+            tokens.append(float(current_token))
+        if open_parentheses_count != 0:
+            error_message = "Invalid expression: mismatched parentheses"
+        if error_message:
+            return error_message
+        return tokens
 
+    
+    def to_rpn(self, tokens):
+        output = []
+        operators_stack = []
+        for token in tokens:
+            if isinstance(token, float):
+                output.append(token)
+            elif token in self.operators:
+                while operators_stack and operators_stack[-1] in self.operators and self.operators[token] <= self.operators[operators_stack[-1]]:
+                    output.append(operators_stack.pop())
+                operators_stack.append(token)
+            elif token == '(':
+                operators_stack.append(token)
+            elif token == ')':
+                while operators_stack and operators_stack[-1] != '(':
+                    output.append(operators_stack.pop())
+                if operators_stack and operators_stack[-1] == '(':
+                    operators_stack.pop()
+        while operators_stack:
+            output.append(operators_stack.pop())
+        return output
 
-    def calculate_with_brackets(self, expression):
-        # Находим самую внутреннюю пару скобок
-        start = expression.rfind("(")
-        end = expression.find(")", start)
-        
-        # Вычисляем значение выражения внутри скобок
-        value = self.calculate(expression[start+1:end])
-        
-        # Заменяем выражение внутри скобок на его значение
-        expression = expression[:start] + str(value) + expression[end+1:]
-        
-        # Если в выражении остались скобки, рекурсивно вычисляем их значения
-        if "(" in expression or ")" in expression:
-            return self.calculate_with_brackets(expression)
-        else:
-            return self.calculate(expression)
-
-
+    def calculate(self, expression):
+        tokens = self.tokenize(expression)
+        if isinstance(tokens, str):
+            return tokens
+        rpn = self.to_rpn(tokens)
+        stack = []
+        for token in rpn:
+            if isinstance(token, float):
+                stack.append(token)
+            elif token in self.operators:
+                if len(stack) < 2:
+                    return 'Invalid expression'
+                operand2 = stack.pop()
+                operand1 = stack.pop()
+                if token == '+':
+                    result = operand1 + operand2
+                elif token == '-':
+                    result = operand1 - operand2
+                elif token == '*':
+                    result = operand1 * operand2
+                elif token == '/':
+                    if operand2 == 0:
+                        return 'Division by zero'
+                    result = operand1 / operand2
+                stack.append(result)
+        if len(stack) != 1:
+            return 'Invalid expression'
+        return stack[0]
 
 
 app = flask.Flask(__name__)
@@ -94,6 +103,3 @@ def calculate():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-
